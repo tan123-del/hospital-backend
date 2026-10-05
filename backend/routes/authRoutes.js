@@ -2,182 +2,209 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const User = require("../models/User");
 const Hospital = require("../models/Hospital");
 
-// Configure Nodemailer Transporter
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Helper: 6-digit OTP
+// Helper function: Generate a random 6-digit OTP
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// 1. REGISTER (Dual-Entity Creation for Hospitals)
+// 1. REGISTER ROUTE
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    let { name, email, password, role } = req.body;
+    email = email ? email.trim().toLowerCase() : "";
+    password = password ? password.trim() : "";
 
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ success: false, message: "All fields are required." });
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required." });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: "User with this email already exists." });
+    // Check if an account already exists with this email
+    let existingUser = await User.findOne({ email });
+    if (existingUser && existingUser.isVerified) {
+      return res.status(400).json({ message: "An account with this email already exists. Please log in." });
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const otp = generateOtp();
-    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
-    let linkedHospitalId = null;
+    let hospitalId = null;
 
-    // Option A: If registering as Hospital, create the Facility record
     if (role === "hospital") {
-      let hospitalDoc = await Hospital.findOne({ name: name.trim() });
-      if (!hospitalDoc) {
-        hospitalDoc = await Hospital.create({
-          name: name.trim(),
+      let facility = await Hospital.findOne({ name });
+      if (!facility) {
+        facility = await Hospital.create({
+          name,
           location: "Indore, Madhya Pradesh",
-          address: `${name.trim()}, Indore, Madhya Pradesh`,
-          phone: "+91 98765 00000",
-          distance: "2.5 km",
-          rating: 4.5,
-          reviews: 1,
-          specialties: ["General Medicine", "Emergency Care"],
-          services: ["Emergency", "Diagnostics", "Pharmacy"],
-          wait: "15 min",
-          queue: 0,
-          beds: 15,
-          emergency: "Available",
-          status: "Open",
-          verified: false, // Requires System Admin Approval
-          doctors: [
-            {
-              name: `Dr. ${name.split(" ")[0]} Resident`,
-              specialty: "General Medicine",
-              qualification: "MBBS, MD",
-              experience: "5 years",
-              availability: "Available today",
-              verified: true,
-            },
-          ],
+          address: `${name}, Indore`,
+          verified: false,
         });
       }
-      linkedHospitalId = hospitalDoc._id;
+      hospitalId = facility._id;
     }
 
-    // Create User record linked to the Hospital
-    const newUser = await User.create({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      password: hashedPassword,
-      role,
-      hospitalId: linkedHospitalId,
-      isVerified: false,
-      verificationOtp: otp,
-      otpExpiresAt,
-    });
-
-    // Send OTP via Nodemailer
-    try {
-      await transporter.sendMail({
-        from: `"Smart Hospital Network" <${process.env.EMAIL_USER}>`,
-        to: email.trim(),
-        subject: "Smart Hospital Network - Email Verification Code",
-        html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-            <h2>Verify Your Healthcare Account</h2>
-            <p>Your one-time email verification code is:</p>
-            <h1 style="font-size: 32px; letter-spacing: 5px; color: #2563eb;">${otp}</h1>
-            <p>This code will expire in 10 minutes.</p>
-          </div>
-        `,
+    if (existingUser && !existingUser.isVerified) {
+      existingUser.name = name;
+      existingUser.password = hashedPassword;
+      existingUser.role = role;
+      existingUser.hospitalId = hospitalId;
+      existingUser.verificationOtp = otp;
+      existingUser.otpExpiresAt = otpExpiresAt;
+      await existingUser.save();
+    } else {
+      await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        role: role || "patient",
+        hospitalId,
+        isVerified: false,
+        verificationOtp: otp,
+        otpExpiresAt,
       });
-    } catch (mailErr) {
-      console.warn("Mail dispatch failed, check credentials. OTP:", otp);
     }
 
-    res.status(201).json({
+    console.log(`\n========================================`);
+    console.log(`[OTP DISPATCH] Recipient: ${email}`);
+    console.log(`[OTP CODE]      ${otp}`);
+    console.log(`========================================\n`);
+
+    if (process.env.RESEND_API_KEY) {
+      try {
+        await resend.emails.send({
+          from: "Smart Hospital <onboarding@resend.dev>",
+          to: email,
+          subject: "Your Smart Hospital Network Verification Code",
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+              <h2 style="color: #2563eb; margin-top: 0;">Smart Hospital Network</h2>
+              <p style="font-size: 15px;">Your one-time email verification code is:</p>
+              <div style="background-color: #f1f5f9; padding: 16px; border-radius: 6px; text-align: center; margin: 20px 0;">
+                <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1e293b;">${otp}</span>
+              </div>
+              <p style="font-size: 13px; color: #64748b;">This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+            </div>
+          `,
+        });
+        console.log(`[Resend] Successfully delivered verification email to ${email}`);
+      } catch (mailErr) {
+        console.error("[Resend Error]:", mailErr.message);
+      }
+    }
+
+    return res.status(200).json({
       success: true,
       requiresOtp: true,
-      message: "Registration initiated. Verification code sent to email.",
-      email: newUser.email,
+      message: "Verification code sent to your email.",
     });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error("Registration error:", error);
+    return res.status(500).json({ message: "Registration failed: " + error.message });
   }
 });
 
-// 2. VERIFY OTP
+// 2. VERIFY OTP ROUTE
 router.post("/verify-otp", async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    let { email, otp } = req.body;
+    email = email ? email.trim().toLowerCase() : "";
+    otp = otp ? otp.trim() : "";
 
+    const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found." });
+      return res.status(404).json({ message: "User account not found." });
     }
 
     if (user.isVerified) {
-      return res.status(400).json({ success: false, message: "Account already verified." });
+      return res.status(400).json({ message: "Account is already verified. Please log in." });
     }
 
-    if (user.verificationOtp !== otp.trim() || user.otpExpiresAt < new Date()) {
-      return res.status(400).json({ success: false, message: "Invalid or expired OTP code." });
+    if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+      return res.status(400).json({ message: "Verification code has expired. Please register again." });
+    }
+
+    if (user.verificationOtp !== otp) {
+      return res.status(400).json({ message: "Invalid verification code. Please check and try again." });
     }
 
     user.isVerified = true;
-    user.verificationOtp = undefined;
-    user.otpExpiresAt = undefined;
+    user.verificationOtp = null;
+    user.otpExpiresAt = null;
     await user.save();
 
-    res.json({ success: true, message: "Email verified successfully. You may now log in." });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.log(`[AUTH] User verified successfully: ${email}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Email verified successfully! You can now log in.",
+    });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+    return res.status(500).json({ message: "Verification failed." });
   }
 });
 
-// 3. LOGIN
+// 3. LOGIN ROUTE (With explicit debugging)
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    let { email, password, role } = req.body;
+    email = email ? email.trim().toLowerCase() : "";
+    password = password ? password.trim() : "";
 
+    console.log(`\n--- LOGIN ATTEMPT ---`);
+    console.log(`Attempting email: "${email}" | Attempting role: "${role}"`);
+
+    const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ success: false, message: "Invalid email or password." });
+      console.log(`[LOGIN FAILED] No user found in MongoDB with email: ${email}`);
+      return res.status(400).json({ message: "Invalid email or password." });
     }
 
+    console.log(`[LOGIN DEBUG] Account found. Registered role: "${user.role}" | isVerified: ${user.isVerified}`);
+
+    // Check verification status
     if (!user.isVerified) {
+      console.log(`[LOGIN BLOCKED] User email is not verified.`);
       return res.status(403).json({
-        success: false,
         requiresOtp: true,
-        message: "Account not verified. Please verify your OTP.",
+        message: "Your email is not verified. Please verify your OTP first.",
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ success: false, message: "Invalid email or password." });
+    // Role check (if role was passed from frontend)
+    if (role && user.role && user.role.toLowerCase() !== role.toLowerCase()) {
+      console.log(`[LOGIN BLOCKED] Role mismatch: User is '${user.role}' but tried logging in as '${role}'`);
+      return res.status(400).json({
+        message: `Account role is '${user.role}', not '${role}'. Please switch role to log in.`,
+      });
     }
+
+    // Compare password
+    const isMatch = await bcrypt.compare(password, user.password);
+    console.log(`[LOGIN DEBUG] Bcrypt match result: ${isMatch}`);
+
+    if (!isMatch) {
+      console.log(`[LOGIN FAILED] Password mismatch for ${email}`);
+      return res.status(400).json({ message: "Invalid email or password." });
+    }
+
+    console.log(`[LOGIN SUCCESS] ${email} authenticated successfully.`);
 
     const token = jwt.sign(
       { id: user._id, role: user.role, hospitalId: user.hospitalId },
-      process.env.JWT_SECRET || "smartHospitalSecret2026",
-      { expiresIn: "7d" }
+      process.env.JWT_SECRET || "default_secret",
+      { expiresIn: "1d" }
     );
 
-    res.json({
-      success: true,
+    return res.json({
       token,
       user: {
         id: user._id,
@@ -187,8 +214,9 @@ router.post("/login", async (req, res) => {
         hospitalId: user.hospitalId,
       },
     });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error("Login error:", error);
+    return res.status(500).json({ message: "Login failed." });
   }
 });
 
