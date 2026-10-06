@@ -3,7 +3,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Hospital = require("../models/Hospital");
 const Appointment = require("../models/Appointment");
-const AuditLog = require("../models/AuditLog");
+const AuditLog = require("../models/auditLog");
 
 // 1. Get Platform Analytics Overview (FR-18)
 router.get("/overview", async (req, res) => {
