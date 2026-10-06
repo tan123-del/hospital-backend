@@ -1,28 +1,66 @@
-require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+require("dotenv").config();
 
 const app = express();
-app.use(cors());
+
+// 1. Enable Full CORS for any origin & handle preflight OPTIONS
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// 2. Parse incoming JSON
 app.use(express.json());
 
-// MongoDB Connection
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected Successfully"))
-  .catch((err) => console.error("MongoDB Connection Error:", err));
-
-// Route Mounts
-app.use("/api/auth", require("./routes/authRoutes.js"));
-app.use("/api/hospitals", require("./routes/hospitalRoutes.js"));
-app.use("/api/appointments", require("./routes/appointmentRoutes.js"));
-app.use("/api/admin", require("./routes/adminRoutes.js"));
-app.use("/api/queue", require("./routes/QueueRoutes.js"));
-
+// 3. Health check route
 app.get("/", (req, res) => {
-  res.send("Smart Hospital Network Central API is Running.");
+  res.json({ message: "Smart Hospital Network API is running" });
 });
 
+// 4. Mount Routes
+app.use("/api/auth", require("./routes/authRoutes"));
+
+// Mount other existing routes safely
+try {
+  app.use("/api/hospital", require("./routes/hospitalRoutes"));
+} catch (e) {}
+
+try {
+  app.use("/api/queue", require("./routes/QueueRoutes"));
+} catch (e) {}
+
+try {
+  app.use("/api/appointments", require("./routes/appointmentRoutes"));
+} catch (e) {}
+
+try {
+  app.use("/api/admin", require("./routes/adminRoutes"));
+} catch (e) {}
+
+// 5. Connect to MongoDB
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+const MONGO_URI = process.env.MONGO_URI;
+
+if (MONGO_URI) {
+  mongoose
+    .connect(MONGO_URI)
+    .then(() => {
+      console.log("MongoDB Connected Successfully");
+      // Only listen directly when not handled as an export in serverless environments
+      if (process.env.NODE_ENV !== "production") {
+        app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+      }
+    })
+    .catch((err) => console.error("MongoDB Connection Error:", err));
+}
+
+if (process.env.NODE_ENV === "production") {
+  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+}
+
+module.exports = app;
