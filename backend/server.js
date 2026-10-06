@@ -14,11 +14,11 @@ mongoose
   .catch((err) => console.error("MongoDB Connection Error:", err));
 
 // Route Mounts
-app.use("/api/auth", require("./routes/authRoutes"));
-app.use("/api/hospitals", require("./routes/hospitalRoutes"));
-app.use("/api/appointments", require("./routes/appointmentRoutes"));
-app.use("/api/admin", require("./routes/adminRoutes"));
-app.use("/api/queue", require("./routes/queueRoutes"));
+app.use("/api/auth", require("./routes/authRoutes.js"));
+app.use("/api/hospitals", require("./routes/hospitalRoutes.js"));
+app.use("/api/appointments", require("./routes/appointmentRoutes.js"));
+app.use("/api/admin", require("./routes/adminRoutes.js"));
+app.use("/api/queue", require("./routes/queueRoutes.js"));
 
 app.get("/", (req, res) => {
   res.send("Smart Hospital Network Central API is Running.");
