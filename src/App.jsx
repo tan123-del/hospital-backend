@@ -89,7 +89,7 @@ function App() {
   // Fetch live hospitals from MongoDB
   async function loadHospitals() {
     try {
-      const res = await fetch("http://localhost:5000/api/hospitals");
+      const res = await fetch("https://hospital-backend-iota.vercel.app/api/hospitals");
       const data = await res.json();
       if (res.ok && data.hospitals) {
         const formatted = data.hospitals.map((h, i) => ({
@@ -125,7 +125,7 @@ function App() {
   async function syncQueueStatus() {
     if (!currentUser?.email) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/queue/status?email=${encodeURIComponent(currentUser.email)}`);
+      const res = await fetch(`https://hospital-backend-iota.vercel.app/api/queue/status?email=${encodeURIComponent(currentUser.email)}`);
       const data = await res.json();
       if (res.ok && data.success) {
         if (data.active) setQueueData(data.queue);
@@ -151,7 +151,7 @@ function App() {
     async function fetchAppointments() {
       if (!currentUser?.email) return;
       try {
-        const res = await fetch(`http://localhost:5000/api/appointments?email=${encodeURIComponent(currentUser.email)}`);
+        const res = await fetch(`https://hospital-backend-iota.vercel.app/api/appointments?email=${encodeURIComponent(currentUser.email)}`);
         const data = await res.json();
         if (res.ok && data.appointments?.length > 0) {
           const active = data.appointments.find((a) => a.status !== "Cancelled");
@@ -194,7 +194,7 @@ function App() {
         time: data.time,
       };
 
-      const res = await fetch("http://localhost:5000/api/appointments", {
+      const res = await fetch("https://hospital-backend-iota.vercel.app/api/appointments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -221,7 +221,7 @@ function App() {
 
     try {
       const doc = hospital.doctors[0] || { name: "Duty Specialist", specialty: "General Medicine" };
-      const res = await fetch("http://localhost:5000/api/queue/join", {
+      const res = await fetch("https://hospital-backend-iota.vercel.app/api/queue/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -247,7 +247,7 @@ function App() {
 
   async function leaveQueue() {
     try {
-      await fetch("http://localhost:5000/api/queue/leave", {
+      await fetch("https://hospital-backend-iota.vercel.app/api/queue/leave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: currentUser?.email }),
@@ -424,7 +424,7 @@ function AuthScreen({ onComplete }) {
     setError("");
 
     try {
-      const endpoint = mode === "signup" ? "http://localhost:5000/api/auth/register" : "http://localhost:5000/api/auth/login";
+      const endpoint = mode === "signup" ? "https://hospital-backend-iota.vercel.app/api/auth/register" : "https://hospital-backend-iota.vercel.app/api/auth/login";
       const payload = mode === "signup" ? { name: name.trim(), email: email.trim(), password, role } : { email: email.trim(), password };
 
       const res = await fetch(endpoint, {
@@ -460,7 +460,7 @@ function AuthScreen({ onComplete }) {
     e.preventDefault();
     setError("");
     try {
-      const res = await fetch("http://localhost:5000/api/auth/verify-otp", {
+      const res = await fetch("https://hospital-backend-iota.vercel.app/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), otp: otp.trim() }),
