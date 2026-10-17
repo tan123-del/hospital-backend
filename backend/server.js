@@ -21,6 +21,10 @@ app.options("*", cors(corsOptions));
 // 2. Body Parser Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Health check route for Vercel
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Smart Hospital API is operational' });
+});
 
 // 3. Root health-check endpoint
 app.get("/", (req, res) => {
