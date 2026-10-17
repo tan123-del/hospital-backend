@@ -7,7 +7,7 @@ const app = express();
 
 // 1. Comprehensive CORS setup
 const corsOptions = {
-  origin: "/*",
+  origin: '/*',
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   credentials: false
@@ -16,7 +16,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Explicitly handle all preflight OPTIONS requests across any endpoint
-app.options("/*", cors(corsOptions));
+app.options('/*', cors(corsOptions));
 
 // 2. Body Parser Middleware
 app.use(express.json());
